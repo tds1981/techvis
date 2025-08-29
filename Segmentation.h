@@ -9,7 +9,8 @@
 #include <memory>
 #include <map>
 #include <cmath>
-#include <algorithm>
+#include <ctime>
+#include <cstdlib>
 
 #include "IMG.h"
 
@@ -19,16 +20,30 @@ class Segmentation
 {
 public:
  Segmentation (shared_ptr<IMG> imgP = nullptr) : Img(imgP) {};   
- shared_ptr<IMG> Img;
- shared_ptr<IMG> OutImg = nullptr;   
- map<int, int> TuningBackground(Area A, bool printParametrs = false);
+
  //shared_ptr<IMG> Monochrom(shared_ptr<IMG> InImg = nullptr, int Level = 380);
  shared_ptr<IMG> Convolution(shared_ptr<IMG> InImg, int Kernel_width, int Kernel_height, std::vector<int> convKernel);
  shared_ptr<IMG> DetectBorders(shared_ptr<IMG> InImg=nullptr);
  TArea FindColorArea(shared_ptr<IMG> InImg=nullptr);     
  shared_ptr<IMG> Difference(shared_ptr<IMG> Img1, shared_ptr<IMG> Img2, int &count);
+ 
+ shared_ptr<IMG> PaintClusters(shared_ptr<IMG> InImg, uint32_t deep, vector<TArea>& Clusters, TColorPix findColor={0, 0, 0, 0});
+ //vector<TLine> GetVectorLine(shared_ptr<IMG> InImg, uint32_t deep, TColorPix findColor); 
+ shared_ptr<IMG> FastDetectBorders(shared_ptr<IMG> InImg=nullptr, int Level = 0);
+ //vector<TArea> FindColorClusters(shared_ptr<IMG> InImg); 
+ bool FilterBrightnessClusters(TArea A);
+ bool FilterSizeClusters(TArea A);   
+ TColorPix RandomColor();     
+ int CompareFrames();
+
+ shared_ptr<IMG> Img;
+ shared_ptr<IMG> FonImg = nullptr;   
+ shared_ptr<IMG> OutImg = nullptr;   
+ map<int, int> TuningBackground(Area A, bool printParametrs = false);
  TColorPix fon; 
- TPoint SizeSegment;  
+ TPoint FindSegmentSize;  
+ double FindSegmentBrightness;
+ TColorPix LevelMonohrom = {90, 90, 90, 90}; 
 
 private: 
 inline TColorPix MediumColorAreal(shared_ptr<IMG> In, TPoint P0, int width, int height) 
@@ -59,11 +74,12 @@ inline TColorPix MediumColorContur(shared_ptr<IMG> In, TPoint P0, int width, int
      return {round(r/Ncount), round(g/Ncount), round(b/Ncount), 0};
  }; 
 
-inline int CompareColors(TColorPix P1, TColorPix P2)  
+inline TColorPix CompareColors(TColorPix P1, TColorPix P2)  
 {
-     int dif_r = 100*abs(P1.Red - P2.Red)/0xff;
-     int dif_g = 100*abs(P1.Green - P2.Green)/0xff;
-     int dif_b = 100*abs(P1.Blue - P2.Blue)/0xff; 
-     return dif_r + dif_g + dif_b;   
+     int dif_r = 0xff*abs(P1.Red - P2.Red)/0xff;
+     int dif_g = 0xff*abs(P1.Green - P2.Green)/0xff;
+     int dif_b = 0xff*abs(P1.Blue - P2.Blue)/0xff; 
+     TColorPix pixDif; pixDif.IntsToColor(dif_b, dif_g, dif_r);   
+     return pixDif;   
 };
 };

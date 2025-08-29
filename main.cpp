@@ -10,7 +10,7 @@
 
 void takeFoto()
 {
-        string s = "ffmpeg -f v4l2  -s 640x480 -i /dev/video2 -vf \"fps=3\" f/f%d.bmp &";
+        string s = "ffmpeg -f v4l2  -s 640x480 -i /dev/video0 -vf \"fps=3\" f/f%d.bmp &";
         int result = system(s.c_str());
 }
 
@@ -33,6 +33,7 @@ try
         W.LoadFoto();
         
 		sf::Event event;
+        W.mouseP = sf::Mouse::getPosition(window);
         while(window.pollEvent(event))
 		{
             if(event.type == sf::Event::Closed) 

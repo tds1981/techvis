@@ -1,15 +1,5 @@
 #include "GUI.h"
 
-void ppr1(int a)
-{
-    printf("button presed \n");
-}
-
-void ppr2(int a)
-{
-    
-}
-
 int GUI::LoadFoto()
 {
     string nameF = "f/f"+ to_string(Nfile) +".bmp";
@@ -19,11 +9,13 @@ int GUI::LoadFoto()
     if(ImgBuf.loadFromFile(nameF))
     {
       Seg.Img = make_shared<IMG>(img_width, img_height, ImgBuf.getPixelsPtr(), Nfile);
-
-      if (button[3].state)  Seg.Img->Monochrom({90, 90, 90, 0});
-      if (button[4].state)  Seg.Img = Seg.DetectBorders();
+ 
+      if (button[3].state)  Seg.Img->Monochrom({0xff & (uint8_t)LevelMonohrom[0].Value, 0xff & (uint8_t)LevelMonohrom[1].Value, 0xff & (uint8_t)LevelMonohrom[2].Value, 0xff});
+      if (button[4].state)  {  Seg.Img = Seg.FastDetectBorders(nullptr, LevelBorders.Value);} //Seg.DetectBorders();
       if (button[5].state)  Seg.Img = Difference(); 
-      
+      if (button[6].state)  Brightness_value.setString( to_string(Seg.Img->Brightness(-1*LevelBrightness.Value)) );
+      if (button[7].state)  Seg.Img->Contrast({127, 127, 127, 0}, LevelContrast.Value);
+      if (button[2].state)  Seg.Img->PutMask({0xff & (uint8_t)LevelMask[0].Value, 0xff & (uint8_t)LevelMask[1].Value, 0xff & (uint8_t)LevelMask[2].Value, 0xff}); 
       texture.update( Seg.Img->GetPtr() );  
       sprite.setTexture(texture);
 
@@ -36,11 +28,17 @@ int GUI::LoadFoto()
 
 bool  GUI::EventControl(sf::Event &event)
 {
-    for(int i=0; i < 6; i++) button[i].EventControl(event);
-    
+    for(int i=0; i < 8; i++) button[i].EventControl(event);
+    for(int i=0; i < 3; i++) LevelMonohrom[i].EventControl(event, mouseP);
+
+    LevelBrightness.EventControl(event, mouseP);
+    LevelContrast.EventControl(event, mouseP);
+    LevelBorders.EventControl(event, mouseP);
+    for(int i=0; i < 3; i++) LevelMask[i].EventControl(event, mouseP);
+
+    if (button[1].state)  ProcessingImg1(); //else {Seg.FonImg = nullptr; timer = 0;}
     if (button[0].state) TuningFon();
-    if (button[1].state) ProcessingImg();
-    if (button[2].state) PutMask();
+    
    // if (button[3].state) Monohrom();  
     
     if(event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Right && SelectArea.x1 ==0 && SelectArea.y1 ==0  && event.mouseButton.x > 0 && event.mouseButton.x < img_width && event.mouseButton.y > 0 && event.mouseButton.y < img_height)      
@@ -60,41 +58,93 @@ bool  GUI::EventControl(sf::Event &event)
 
     return true;
 }
+
 void GUI::ProcessingImg()
 {
-    printf("button presed \n");
-    // shared_ptr<IMG> img = make_shared<IMG>(img_width, img_height, 0);
-    // Segmentation Seg(img);
-    // Seg.Monochrom();
-    //shared_ptr<IMG> imgOut = Seg.DetectBorders();
-    TArea A = Seg.FindColorArea();
-    SelectRec.setPosition(A.x1, A.y1);
-    SelectRec.setSize(Vector2f(A.x2 - A.x1, A.y2 - A.y1));
+    static bool ProcesStart = false;
+    int procentDiff = Seg.CompareFrames();
 
-    shared_ptr<IMG> img_A = Seg.Img->GetSubImg(A); 
-    string NameFile = "f/Result"+ to_string(Nfile) +".bmp";
-    img_A ->Save_Bmp(NameFile);
+    if (time(NULL) - timer < 5)  Message.setString("Message: whaiting timer="+to_string(timer)); else timer =0;
+   
+    if(ProcesStart == false && timer == 0)
+      if (procentDiff < 2 &&  Seg.FonImg ==nullptr ) { Seg.FonImg = Seg.Img; Message.setString("Message: fon seted, whaiting image timer="+to_string(timer));}
+      else 
+      if (procentDiff > 20) 
+      { 
+        ProcesStart = true; timer=0;
+        Message.setString("Message: start processing");
+      }
+      
+    if(ProcesStart && procentDiff < 20)  
+      {
+          int count;
+          shared_ptr<IMG> Dif = Seg.Difference(Seg.FonImg, Seg.Img, count); 
+        
+          //Dif->Save_Bmp("f/seg/f_"+to_string(Seg.Img->Nimg)+".bmp");
+          //Seg.FonImg->Save_Bmp("f/seg/fon_"+to_string(Seg.FonImg->Nimg)+".bmp");
+          Seg.Img->Save_Bmp("f/seg/img_"+to_string(Seg.Img->Nimg)+".bmp");
+          Message.setString("Message: start colors, Save file f/seg/f_"+to_string(Seg.Img->Nimg)+".bmp");  
 
-    Message.setString("Message: find aria x1="+to_string(A.x1)+"  y1 = "+to_string(A.y1)+ " x2 ="+ to_string(A.x2)+ " y2 ="+ to_string(A.y2));     
+          shared_ptr<IMG> im = Seg.Img->GetCopy();
+          if (! button[3].state)  im->Monochrom(Seg.LevelMonohrom); 
+          vector<TArea> Clusters;     
+          shared_ptr<IMG> out = Seg.PaintClusters(im, 1, Clusters);
+          for(auto it=Clusters.begin(); it<Clusters.end(); it++)
+                    Seg.Img->GetSubImg(*it)->Save_Bmp("f/seg/s_"+to_string(it->x1)+"_"+to_string(it->y1)+".bmp");  
+          im->Save_Bmp("f/seg/mono"+to_string(Seg.Img->Nimg)+".bmp");  
+          out->Save_Bmp("f/seg/colors"+to_string(Seg.Img->Nimg)+".bmp"); 
+
+          ProcesStart = false;
+          timer = time(NULL);
+      }    
+}
+
+void GUI::ProcessingImg1()
+{     
+      auto t0 = chrono::high_resolution_clock::now();    
+
+      shared_ptr<IMG> im = Seg.Img->GetCopy();
+      //if (! button[3].state)  im->Monochrom(Seg.LevelMonohrom); 
+      shared_ptr<IMG> im_db = Seg.FastDetectBorders(im, 110);  
+      vector<TArea> Clusters;     
+      shared_ptr<IMG> out = Seg.PaintClusters(im_db, 5, Clusters, {0xff, 0xff, 0xff, 0xff});
+      
+      auto t1 = chrono::high_resolution_clock::now();
+      Message.setString("Message: prosess time: "+to_string(chrono::duration_cast<chrono::milliseconds>(t1-t0).count())+" ms");  
+      
+      for(auto it=Clusters.begin(); it<Clusters.end(); it++) 
+        if(Seg.FilterBrightnessClusters(*it) && Seg.FilterSizeClusters(*it))  
+            Seg.Img->GetSubImg(*it)->Save_Bmp("f/seg/s_"+to_string(it->x1)+"_"+to_string(it->y1)+".bmp"); 
+          
+      im_db->Save_Bmp("f/seg/mono"+to_string(Seg.Img->Nimg)+".bmp");  
+      out->Save_Bmp("f/seg/colors"+to_string(Seg.Img->Nimg)+".bmp"); 
+      Seg.Img->Save_Bmp("f/seg/img_"+to_string(Seg.Img->Nimg)+".bmp");
+  
+  
 }
 
 void GUI::TuningFon()
 {
-    printf("button presed \n");
-    for(int i = 25; i<255; i+=25)
+   /* for(int i = 25; i<255; i+=25)
     { 
         shared_ptr<IMG> buf = Seg.Img->GetCopy();
         buf->Monochrom({i, i, i, 0});
         buf->Save_Bmp("f/tun/IMG_mono"+ to_string(i) +".bmp");
+    }*/
+    if(SelectArea.x1 != SelectArea.x2 && SelectArea.y1 != SelectArea.y2)
+    {
+        Seg.LevelMonohrom = {Seg.LevelMonohrom.Blue+10, Seg.LevelMonohrom.Green+10, Seg.LevelMonohrom.Red+10, Seg.LevelMonohrom.A+10};
+        map<int, int> fon = Seg.TuningBackground(SelectArea);
+        shared_ptr<IMG> findSegment = Seg.Img->GetSubImg(SelectArea); 
+        findSegment = Seg.FastDetectBorders(findSegment, 110);  
+        findSegment->Save_Bmp("f/seg/findSegment"+ to_string(Nfile) +".bmp");
+        VectorPoints Vp(findSegment, {0xff, 0xff, 0xff, 0xff});
+        Vp.GetImg(false)->Save_Bmp("f/seg/restored"+ to_string(Nfile) +".bmp");
+        Vp.SortLength();
+        Vp.PrintLog();
     }
     
-    map<int, int> fon = Seg.TuningBackground(SelectArea);
-    string NameFile = "f/Result"+ to_string(Nfile) +".bmp";
-    
-    shared_ptr<IMG> img_A = Seg.Img->GetSubImg(SelectArea); 
-    img_A ->Save_Bmp("f/Fon"+ to_string(Nfile) +".bmp");
-
-    Message.setString("Message: fon saved. Size aria = "+ to_string(Seg.SizeSegment.x)+" x "+to_string(Seg.SizeSegment.y)+"   "+" R = "+to_string(Seg.fon.Red)+" G = "+to_string(Seg.fon.Green)+" B = "+to_string(Seg.fon.Blue));
+    Message.setString("Message: Size segment = "+ to_string(Seg.FindSegmentSize.x)+" x "+to_string(Seg.FindSegmentSize.y)+"   "+" R = "+to_string(Seg.LevelMonohrom.Red)+" G = "+to_string(Seg.LevelMonohrom.Green)+" B = "+to_string(Seg.LevelMonohrom.Blue));
    
     SelectArea = {0, 0, 0, 0}; 
     SelectRec.setSize(Vector2f(0, 0));          
@@ -158,56 +208,18 @@ shared_ptr<IMG> GUI::Difference()
         Dif = Seg.Difference(Previous, Seg.Img, countDif); 
         //texture.update( Dif->GetPtr() ); 
         if (countDif > Dif->size()/20) Dif->Save_Bmp("f/dif/"+ to_string(Nfile) +".bmp");
-        Message.setString("Message: countDif="+to_string(countDif)+" size="+to_string(Dif->size()));
+        Message.setString("Message: countDif="+to_string(countDif)+" size="+to_string(Dif->size())+" procent= "+to_string(countDif * 100 / Dif->size()));
     };  
    Previous = Seg.Img;  
    if (Dif != nullptr) return Dif; else return Seg.Img; 
 }
 
-// -------------------- Button ---------------------------
-void TButton::SetButton(void(*op)(int), float X, float Y, string nameButton, bool typeButton)
+void GUI::TextSetting(sf::Text &t, unsigned int x, unsigned int y, string s)
 {
-    x=X; y=Y;
     font.loadFromFile("Textures/arial.ttf");
-    caption.setString(nameButton);
-    caption.setFont(font);
-    caption.setPosition(X+10, Y+20);
-    caption.setCharacterSize(18);
-    caption.setColor(sf::Color::Black);
-    
-    rect.setPosition(X, Y);
-	rect.setSize(Vector2f(w, h));
-	rect.setOutlineColor(Color::Magenta);
-	rect.setOutlineThickness(3);
-    rect.setFillColor(sf::Color::Yellow);
-
-    click = op; ficsion = typeButton;
-}
-bool TButton::EventControl(sf::Event &event)
-{  
-   rect.setOutlineColor(Color::Red);  rect.setOutlineThickness(3);
- 
-   if (!ficsion) rect.setFillColor(sf::Color::Yellow);
-   else if (state) rect.setFillColor(sf::Color::Green); else  rect.setFillColor(sf::Color::Yellow);
-
-   if (event.type == sf::Event::MouseMoved && event.mouseMove.x > x && event.mouseMove.x < x+w && event.mouseMove.y > y && event.mouseMove.y < y+h)
-      { rect.setOutlineColor(sf::Color::Blue);  rect.setOutlineThickness(5);   }
-    
-   if(event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left
-            && event.mouseButton.x > x && event.mouseButton.x < x+w && event.mouseButton.y > y && event.mouseButton.y < y+h)
-      {  if (!ficsion) state = true; else state = !state;    }
-
-   if(event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == sf::Mouse::Left
-            && event.mouseButton.x > x && event.mouseButton.x < x+w && event.mouseButton.y > y && event.mouseButton.y < y+h)
-   {  click(1); 
-      if (!ficsion) state = false; 
-   }
-      
-    return false;
+    t.setString(s.c_str());
+    t.setFont(font);          t.setPosition(x, y);
+    t.setCharacterSize(16);   t.setColor(sf::Color::White); 
 }
 
-void TButton::draw(sf::RenderWindow &window)
-{
-     window.draw(rect);
-     window.draw(caption);
-}
+

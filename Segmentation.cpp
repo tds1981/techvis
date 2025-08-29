@@ -1,17 +1,12 @@
 #include "Segmentation.h"
 
-void PrintMap(string namef)
+void Log(string message)
 {
- /*   std::ofstream outputFile(namef);
-    outputFile << "Stat Fon :  x1=" << A.x1 <<" y1= " << A.y1 << " x2= " << A.x2 << " y2 = " << A.y2 << std::endl;
-    outputFile << "Size area : "<< (A.x2 - A.x1)*(A.y2 - A.y1) << " x= " << A.x2 - A.x1 <<" y= " << A.y2 - A.y1  << std::endl;    
-   // outputFile << "Color fon : R = "<< fon.Red << " G = " << fon.Green <<" B = " << fon.Blue  << std::endl;
+    std::fstream outputFile;
+    outputFile.open("Log.txt", ios::app);
     if(outputFile.is_open())
-        for(auto it{Stat.begin()}; it != Stat.end(); it++) 
-            if (it->second >1)
-            outputFile << "RGB = " << std::hex << it->first << " , count = "<< std::dec << it->second << std::endl;
-            //printf("RGB = %x , count = %i \n", it->first,  it->second);
-   outputFile.close(); */
+    outputFile << message.c_str() << std::endl;
+    outputFile.close(); 
 }
 
 map<int, int> Segmentation::TuningBackground(Area A, bool printParametrs)
@@ -28,25 +23,14 @@ map<int, int> Segmentation::TuningBackground(Area A, bool printParametrs)
             else Stat[P] = 1;    
         }
 
-    SizeSegment.x = A.x2 - A.x1;
-    SizeSegment.y = A.y2 - A.y1;
+    FindSegmentSize.x = A.x2 - A.x1;
+    FindSegmentSize.y = A.y2 - A.y1;
+    FindSegmentBrightness = Img->BrightnessArea(A);
    // fon = MediumColorContur(Img, {A.x1, A.y1}, SizeSegment.x, SizeSegment.y); 
-    fon = MediumColorAreal(Img, {A.x1, A.y1}, SizeSegment.x, SizeSegment.y);
+    fon = MediumColorAreal(Img, {A.x1, A.y1}, FindSegmentSize.x, FindSegmentSize.y);
     
    return Stat ;
 }
-/*
-shared_ptr<IMG> Segmentation::Monochrom(shared_ptr<IMG> InImg, int Level)
-{
-   shared_ptr<IMG> In;
-   if (InImg==nullptr) In = Img; else In = InImg;   
-   OutImg = make_shared<IMG>(In->width, In->height); 
-   auto out = OutImg->begin();  
-   for (auto it = In->begin(); it < In->end(); it++)
-       if (it->Blue + it->Green + it->Red > Level) { out->Blue = 255; out->Green = 255; out->Red = 255; out++;}
-       else { out->Blue = 0; out->Green = 0; out->Red = 0; out++;}
-   return OutImg;
-}*/
 
 shared_ptr<IMG> Segmentation::Convolution(shared_ptr<IMG> InImg, int Kernel_width, int Kernel_height, std::vector<int> convKernel)
 {
@@ -59,22 +43,30 @@ shared_ptr<IMG> Segmentation::Convolution(shared_ptr<IMG> InImg, int Kernel_widt
     {
         for (int x = 0; x < InImg->width; x++)
         {
-            int pix = 0;
-            
+            //int pix = 0;
+            int b=0; int g=0; int r=0; 
             for (int ky = -grY; ky <= grY; ky++)
             {
                 for (int kx = -grX; kx <= grX; kx++)
                 {
-                    int vP = 0;
+                    //int vP = 0; 
                     if (x + kx < 0 || y + ky < 0
                         || x + kx >= InImg->width
-                        || y + ky >= InImg->height) vP = 0;
-                    else vP = InImg->PixToInt(x + kx, y + ky) * convKernel.at(kx + grX + (ky+grY) * Kernel_width);
-                    pix += vP;
+                        || y + ky >= InImg->height) {b=0; g=0; r=0;}
+                    else
+                    {     
+                    //vP = InImg->PixToInt(x + kx, y + ky) * convKernel.at(kx + grX + (ky+grY) * Kernel_width);
+                        r+= (int)InImg->Pix(x + kx, y + ky).Red * convKernel.at(kx + grX + (ky+grY) * Kernel_width);
+                        g+= (int)InImg->Pix(x + kx, y + ky).Green * convKernel.at(kx + grX + (ky+grY) * Kernel_width);
+                        b+= (int)InImg->Pix(x + kx, y + ky).Blue * convKernel.at(kx + grX + (ky+grY) * Kernel_width);    
+                    }
+                   // pix += vP;
                     
                 }
             }
-            Res->Set(x, y, *reinterpret_cast<TColorPix*> (&pix) ); 
+            TColorPix pix;
+            pix.IntsToColor(b, g, r);    
+            Res->Set(x, y, pix); 
         }
     }
    return Res;
@@ -99,7 +91,7 @@ shared_ptr<IMG> Segmentation::DetectBorders(shared_ptr<IMG> InImg)
     return  OutImg;
 }
 
-TArea Segmentation::FindColorArea(shared_ptr<IMG> InImg)
+/*TArea Segmentation::FindColorArea(shared_ptr<IMG> InImg)
 {
     shared_ptr<IMG> In;
     if(InImg != nullptr) In = InImg; else In = Img;
@@ -113,7 +105,7 @@ TArea Segmentation::FindColorArea(shared_ptr<IMG> InImg)
         {
            // TColorPix Cp = MediumColorContur(In, {x, y}, SizeSegment.x, SizeSegment.y); 
             TColorPix Cp = MediumColorAreal(In, {x, y}, SizeSegment.x, SizeSegment.y);
-            int dif =  CompareColors(Cp, fon);   
+            TColorPix dif =  CompareColors(Cp, fon);   
             if (dif < minDif ) {minP = {x, y}; minDif = dif;}  
             if (dif == 0) {minP = {x, y}; minDif = dif; break; break;}   
         }
@@ -125,7 +117,7 @@ TArea Segmentation::FindColorArea(shared_ptr<IMG> InImg)
   //  for (unsigned int y = minP.y + 1; y < In->height; y++) if (CompareColors(In->Pix(minP.x+1, y), fon) <= minDif) maxP.y = y; else break;
 
     return  {minP.x, minP.y, maxP.x, maxP.y} ;  
-}
+}*/
 
 shared_ptr<IMG> Segmentation::Difference(shared_ptr<IMG> Img1, shared_ptr<IMG> Img2, int &count)
 {
@@ -135,8 +127,9 @@ shared_ptr<IMG> Segmentation::Difference(shared_ptr<IMG> Img1, shared_ptr<IMG> I
     count = 0;
     for(auto r=Res->begin(); r < Res->end(); r++) 
     {
-        if(CompareColors(*im1, *im2)>50) {*r = {0xff, 0xff, 0xff, 127}; count++;}
-        else *r = {0, 0, 0, 127};
+        TColorPix dif = CompareColors(*im1, *im2);
+        if(dif.Red + dif.Green + dif.Blue > 200) {*r = {0xff, 0xff, 0xff, 0xff}; count++;}
+        else *r = {0, 0, 0, 0};
      //   r->Red = abs(im1->Red - im2->Red);
      //   r->Green = abs(im1->Green - im2->Green);
      //   r->Blue = abs(im1->Blue - im2->Blue);
@@ -144,3 +137,122 @@ shared_ptr<IMG> Segmentation::Difference(shared_ptr<IMG> Img1, shared_ptr<IMG> I
     }
     return Res;
 }
+
+TColorPix Segmentation::RandomColor()
+{
+    static uint8_t num=1;
+    uint8_t rn = rand()%150 + 30;
+    TColorPix ColorM = {rn, 10, rn, 0};
+    if (num==1) ColorM = {rn, 10, 10, 0};    
+    if (num==2) ColorM = {30, rn, 10, 0}; 
+    if (num==3) ColorM = {30, 20, rn, 0}; 
+    if (num==4) ColorM = {30, rn, rn, 0};
+    if(++num > 4) num = 1;
+    return  ColorM ;
+}
+
+shared_ptr<IMG> Segmentation::PaintClusters(shared_ptr<IMG> InImg, uint32_t deep, vector<TArea>& Clusters, TColorPix findColor)
+{
+    shared_ptr<IMG> out = make_shared<IMG>(InImg->width, InImg->height); 
+    srand(time(NULL));
+
+    for (int k = 0; k < InImg->width * InImg->height ; k++)
+      if(InImg->at(k) == findColor && out->at(k).toInt() == 0)
+      {
+         vector<TPoint> loc;
+         loc.push_back({k % InImg->width, k / InImg->width});    
+         TArea A = {loc.front().x, loc.front().y, loc.front().x, loc.front().y};     
+         TColorPix ColorCl = RandomColor();    
+  
+         while(!loc.empty())
+         {  
+            auto it = loc.begin(); 
+            uint32_t x0 = it->x;
+            uint32_t y0 = it->y;
+            
+            if(A.x1 > x0) A.x1 = x0;
+            if(A.y1 > y0) A.y1 = y0;
+            if(A.x2 < x0) A.x2 = x0;
+            if(A.y2 < y0) A.y2 = y0;
+            
+            out->Set(x0, y0, ColorCl);     
+            loc.erase(it);  
+            uint32_t Xbegin = (x0 >= deep) ? x0 - deep : 0;
+            uint32_t Ybegin = (y0 >= deep) ? y0 - deep : 0;
+            uint32_t Xend = (x0 + deep < InImg->width) ?  x0 + deep : InImg->width-1;
+            uint32_t Yend = (y0 + deep < InImg->height) ? y0 + deep : InImg->height-1;
+    
+            for(int y = Ybegin; y <= Yend; y++)    
+                for(int x = Xbegin; x <= Xend; x++) 
+                    if(InImg->Pix(x, y) == findColor && out->Pix(x, y).toInt() == 0 ) 
+                    {  out->Set(x, y, ColorCl); 
+                       loc.push_back({x, y});
+                    }                 
+         }  
+         //Clusters.push_back(A);    
+         if ((A.x2-A.x1 > 3 && A.y2-A.y1 > 3)) {Clusters.push_back(A); 
+                                     Log(" x1 = "+to_string(A.x1)+" y1 = "+to_string(A.y1)+" x2 = "+to_string(A.x2)+" y2 = "+to_string(A.y2));}
+    }
+    return out;
+}
+
+bool Segmentation::FilterSizeClusters(TArea A)
+{
+   if (A.x2-A.x1 < 4 || A.y2-A.y1 < 4) return false;
+ 
+   double S_A = (A.x2 - A.x1)*(A.y2 - A.y1); 
+   double S = (double)FindSegmentSize.x * (double)FindSegmentSize.y ;
+ 
+   if  ((S_A  >= 0.7*S) && (S_A  <= 1.3*S) ) return true; 
+   
+   return false; 
+}
+
+bool Segmentation::FilterBrightnessClusters(TArea A)
+{
+  double Bcl = Img->BrightnessArea(A); 
+  if  ((Bcl  >= 0.8*FindSegmentBrightness) && (Bcl  <= 1.2*FindSegmentBrightness) ) return true;    
+  return false;   
+}
+
+int Segmentation::CompareFrames() // сравнение последовательно идущих кадров
+{
+    static shared_ptr<IMG> Previous = nullptr;
+    static shared_ptr<IMG> Dif = nullptr;
+    int countDif = -1;
+    int procent = -1;
+    if (Previous != nullptr) 
+    { 
+        Dif = Difference(Previous, Img, countDif); 
+        procent = countDif * 100 / Dif->size();
+    };  
+    Previous = Img;
+    return  procent;
+}
+
+shared_ptr<IMG> Segmentation::FastDetectBorders(shared_ptr<IMG> InImg, int Level)
+{
+    shared_ptr<IMG> In; 
+    if(InImg != nullptr) In = InImg; else In = Img;
+    shared_ptr<IMG> out = make_shared<IMG>(In->width, In->height);
+
+    for (unsigned int y = 1; y < In->height-1; y++)
+    {
+        for (unsigned int x = 1; x < In->width-1; x++)
+        {
+           TColorPix dif[2];
+           dif[0] = CompareColors(In->Pix(x-1, y), In->Pix(x+1, y)); 
+           dif[1] = CompareColors(In->Pix(x, y-1), In->Pix(x, y+1)); 
+           
+           if(Level == 0) { dif[0].Red |= dif[1].Red;  dif[0].Green |= dif[1].Green; dif[0].Blue |= dif[1].Blue; out->Set(x, y, dif[0]) ;}
+           else 
+            { int d = dif[0].Red + dif[1].Red + dif[0].Green + dif[1].Green + dif[0].Blue + dif[1].Blue;
+                if(d > Level) out->Set(x, y, {0xff, 0xff, 0xff, 0xff}) ;
+                else out->Set(x, y, {0, 0, 0, 0}) ;
+            }
+        }
+    }
+    return out;
+}
+
+
