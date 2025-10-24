@@ -3,25 +3,17 @@
 void Log(string message)
 {
     std::fstream outputFile;
-    outputFile.open("Log.txt", ios::app);
+    outputFile.open("data/Log.txt", ios::app);
     if(outputFile.is_open())
     outputFile << message.c_str() << std::endl;
     outputFile.close(); 
 }
 
-map<int, int> Segmentation::TuningBackground(Area A, bool printParametrs)
+vector<TColorStat> Segmentation::TuningBackground(Area A, bool printParametrs)
 {
     printf("TuningBackground: \n");
-    map<int, int> Stat;
-    vector<pair<int, int>> Stat1;
-    for (uint32_t y = A.y1; y < A.y2; y++)
-		for (uint32_t x = A.x1; x < A.x2; x++)
-        {
-            TColorPix Px = Img->Pix(x,y);
-            int P = *reinterpret_cast<int*>(&Px);
-            if (Stat.count(P)) {Stat[P]++;}
-            else Stat[P] = 1;    
-        }
+
+    vector<TColorStat> Stat = Histogram(Img, A);
 
     FindSegmentSize.x = A.x2 - A.x1;
     FindSegmentSize.y = A.y2 - A.y1;
@@ -30,6 +22,29 @@ map<int, int> Segmentation::TuningBackground(Area A, bool printParametrs)
     fon = MediumColorAreal(Img, {A.x1, A.y1}, FindSegmentSize.x, FindSegmentSize.y);
     
    return Stat ;
+}
+
+vector<TColorStat> Segmentation::Histogram(shared_ptr<IMG> InImg, Area A, bool print)
+{
+    vector<TColorStat> R;
+    for (uint32_t y = A.y1; y < A.y2; y++)
+        for (uint32_t x = A.x1; x < A.x2; x++)
+        {
+            TColorPix Px = InImg->v(x, y);
+            auto it = R.begin();
+            bool NewColor = true;
+            while (it < R.end()) { if (Px == it->Color) { it->count++; NewColor = false; break; } else it++; }
+            if(NewColor) R.push_back({Px, 1});
+        }
+    std::sort(R.begin(), R.end(), [](TColorStat a, TColorStat b) {return a.count > b.count; });
+
+    if (print)
+    {
+        for (auto it = R.begin(); it < R.end(); it++)
+            printf("\n (%x, %x, %x) --> %d ", it->Color.Red, it->Color.Green, it->Color.Blue, it->count);
+        printf("\n");
+    }
+    return R;
 }
 
 shared_ptr<IMG> Segmentation::Convolution(shared_ptr<IMG> InImg, int Kernel_width, int Kernel_height, std::vector<int> convKernel)
@@ -56,9 +71,9 @@ shared_ptr<IMG> Segmentation::Convolution(shared_ptr<IMG> InImg, int Kernel_widt
                     else
                     {     
                     //vP = InImg->PixToInt(x + kx, y + ky) * convKernel.at(kx + grX + (ky+grY) * Kernel_width);
-                        r+= (int)InImg->Pix(x + kx, y + ky).Red * convKernel.at(kx + grX + (ky+grY) * Kernel_width);
-                        g+= (int)InImg->Pix(x + kx, y + ky).Green * convKernel.at(kx + grX + (ky+grY) * Kernel_width);
-                        b+= (int)InImg->Pix(x + kx, y + ky).Blue * convKernel.at(kx + grX + (ky+grY) * Kernel_width);    
+                        r+= (int)InImg->v(x + kx, y + ky).Red * convKernel.at(kx + grX + (ky+grY) * Kernel_width);
+                        g+= (int)InImg->v(x + kx, y + ky).Green * convKernel.at(kx + grX + (ky+grY) * Kernel_width);
+                        b+= (int)InImg->v(x + kx, y + ky).Blue * convKernel.at(kx + grX + (ky+grY) * Kernel_width);    
                     }
                    // pix += vP;
                     
@@ -66,7 +81,7 @@ shared_ptr<IMG> Segmentation::Convolution(shared_ptr<IMG> InImg, int Kernel_widt
             }
             TColorPix pix;
             pix.IntsToColor(b, g, r);    
-            Res->Set(x, y, pix); 
+            Res->v(x, y) = pix; 
         }
     }
    return Res;
@@ -74,21 +89,21 @@ shared_ptr<IMG> Segmentation::Convolution(shared_ptr<IMG> InImg, int Kernel_widt
 
 shared_ptr<IMG> Segmentation::DetectBorders(shared_ptr<IMG> InImg)
 {
-    shared_ptr<IMG> In;
-    if(InImg != nullptr) In = InImg; else In = Img;
+   // shared_ptr<IMG> In;
+    //if(InImg != nullptr) In = InImg; else In = Img;
 
     int Kernel_height = 3;
     int Kernel_width = 3;
     std::vector<int> convKernel1 = { 1, 0, -1, 1, 0, -1, 1, 0, -1 };
-    OutImg = Convolution(In, Kernel_width, Kernel_height, convKernel1);
+    shared_ptr<IMG> Out = Convolution(InImg, Kernel_width, Kernel_height, convKernel1);
     
-    std::vector<int> convKernel2 = { 1, 1, 1, 0, 0, 0, -1, -1, -1 };
-    shared_ptr<IMG> Img_DB = Convolution(In, Kernel_width, Kernel_height, convKernel2);
+    std::vector<int> convKernel2 = {1, 1, 1, 0, 0, 0, -1, -1, -1};
+    shared_ptr<IMG> Img_DB = Convolution(InImg, Kernel_width, Kernel_height, convKernel2);
     
-    auto it2 = Img_DB->begin();
-    for(auto out = OutImg->begin(); out < OutImg->end(); out++) {out->Red |= it2->Red; out->Green |= it2->Green; out->Blue |= it2->Blue; it2++;};
-
-    return  OutImg;
+    auto it2 = Img_DB->array.begin();
+    for(auto out = Out->array.begin(); out < Out->array.end(); out++) {out->Red |= it2->Red; out->Green |= it2->Green; out->Blue |= it2->Blue; it2++;};
+    
+    return  Out;
 }
 
 /*TArea Segmentation::FindColorArea(shared_ptr<IMG> InImg)
@@ -122,10 +137,10 @@ shared_ptr<IMG> Segmentation::DetectBorders(shared_ptr<IMG> InImg)
 shared_ptr<IMG> Segmentation::Difference(shared_ptr<IMG> Img1, shared_ptr<IMG> Img2, int &count)
 {
     shared_ptr<IMG> Res = make_shared<IMG>(Img1->width, Img1->height);
-    auto im1 = Img1->begin();
-    auto im2 = Img2->begin();
+    auto im1 = Img1->array.begin();
+    auto im2 = Img2->array.begin();
     count = 0;
-    for(auto r=Res->begin(); r < Res->end(); r++) 
+    for(auto r=Res->array.begin(); r < Res->array.end(); r++) 
     {
         TColorPix dif = CompareColors(*im1, *im2);
         if(dif.Red + dif.Green + dif.Blue > 200) {*r = {0xff, 0xff, 0xff, 0xff}; count++;}
@@ -151,13 +166,13 @@ TColorPix Segmentation::RandomColor()
     return  ColorM ;
 }
 
-shared_ptr<IMG> Segmentation::PaintClusters(shared_ptr<IMG> InImg, uint32_t deep, vector<TArea>& Clusters, TColorPix findColor)
+shared_ptr<IMG> Segmentation::GetClusters(shared_ptr<IMG> InImg, uint32_t deep, vector<TArea>& Clusters, TColorPix findColor)
 {
     shared_ptr<IMG> out = make_shared<IMG>(InImg->width, InImg->height); 
     srand(time(NULL));
-
-    for (int k = 0; k < InImg->width * InImg->height ; k++)
-      if(InImg->at(k) == findColor && out->at(k).toInt() == 0)
+    printf("width = %d, height = %d \n", InImg->width, InImg->height);
+    for (unsigned int k = 0; k < InImg->width * InImg->height ; k++)
+      if(InImg->array.at(k) == findColor && out->array.at(k) == Black)
       {
          vector<TPoint> loc;
          loc.push_back({k % InImg->width, k / InImg->width});    
@@ -165,7 +180,8 @@ shared_ptr<IMG> Segmentation::PaintClusters(shared_ptr<IMG> InImg, uint32_t deep
          TColorPix ColorCl = RandomColor();    
   
          while(!loc.empty())
-         {  
+         { 
+            
             auto it = loc.begin(); 
             uint32_t x0 = it->x;
             uint32_t y0 = it->y;
@@ -175,23 +191,28 @@ shared_ptr<IMG> Segmentation::PaintClusters(shared_ptr<IMG> InImg, uint32_t deep
             if(A.x2 < x0) A.x2 = x0;
             if(A.y2 < y0) A.y2 = y0;
             
-            out->Set(x0, y0, ColorCl);     
+            out->v(x0, y0) = ColorCl;     
             loc.erase(it);  
             uint32_t Xbegin = (x0 >= deep) ? x0 - deep : 0;
             uint32_t Ybegin = (y0 >= deep) ? y0 - deep : 0;
             uint32_t Xend = (x0 + deep < InImg->width) ?  x0 + deep : InImg->width-1;
             uint32_t Yend = (y0 + deep < InImg->height) ? y0 + deep : InImg->height-1;
     
-            for(int y = Ybegin; y <= Yend; y++)    
-                for(int x = Xbegin; x <= Xend; x++) 
-                    if(InImg->Pix(x, y) == findColor && out->Pix(x, y).toInt() == 0 ) 
-                    {  out->Set(x, y, ColorCl); 
+           // printf("PaintCl: (%d, %d)  (%d, %d) \n", Xbegin, Ybegin, Xend, Yend);
+         
+            for(unsigned int y = Ybegin; y <= Yend; y++)    
+                for(unsigned int x = Xbegin; x <= Xend; x++) 
+                    if (InImg->v(x, y) == findColor && out->v(x, y) == Black)
+                    {  out->v(x, y) = ColorCl; 
                        loc.push_back({x, y});
+                      // printf("PaintCl: (%d, %d) \n", x, y);
                     }                 
          }  
          //Clusters.push_back(A);    
          if ((A.x2-A.x1 > 3 && A.y2-A.y1 > 3)) {Clusters.push_back(A); 
-                                     Log(" x1 = "+to_string(A.x1)+" y1 = "+to_string(A.y1)+" x2 = "+to_string(A.x2)+" y2 = "+to_string(A.y2));}
+                                                 Log(" x1 = "+to_string(A.x1)+" y1 = "+to_string(A.y1)+" x2 = "+to_string(A.x2)+" y2 = "+to_string(A.y2));
+                                                 
+                                                }
     }
     return out;
 }
@@ -233,23 +254,32 @@ int Segmentation::CompareFrames() // сравнение последовател
 shared_ptr<IMG> Segmentation::FastDetectBorders(shared_ptr<IMG> InImg, int Level)
 {
     shared_ptr<IMG> In; 
-    if(InImg != nullptr) In = InImg; else In = Img;
+    if(InImg != nullptr) In = InImg; //else In = Img;
     shared_ptr<IMG> out = make_shared<IMG>(In->width, In->height);
 
     for (unsigned int y = 1; y < In->height-1; y++)
     {
         for (unsigned int x = 1; x < In->width-1; x++)
         {
-           TColorPix dif[2];
-           dif[0] = CompareColors(In->Pix(x-1, y), In->Pix(x+1, y)); 
-           dif[1] = CompareColors(In->Pix(x, y-1), In->Pix(x, y+1)); 
+           TColorPix dif[4];
+           dif[0] = CompareColors(In->v(x-1, y), In->v(x+1, y)); 
+           dif[1] = CompareColors(In->v(x, y-1), In->v(x, y+1)); 
            
-           if(Level == 0) { dif[0].Red |= dif[1].Red;  dif[0].Green |= dif[1].Green; dif[0].Blue |= dif[1].Blue; out->Set(x, y, dif[0]) ;}
-           else 
-            { int d = dif[0].Red + dif[1].Red + dif[0].Green + dif[1].Green + dif[0].Blue + dif[1].Blue;
-                if(d > Level) out->Set(x, y, {0xff, 0xff, 0xff, 0xff}) ;
-                else out->Set(x, y, {0, 0, 0, 0}) ;
-            }
+           //dif[2] = CompareColors(In->Pix(x - 1, y + 1), In->Pix(x + 1, y + 1));
+           //dif[3] = CompareColors(In->Pix(x - 1, y - 1), In->Pix(x + 1, y - 1));
+           
+          if(Level == 0) { dif[0].Red |= dif[1].Red;  dif[0].Green |= dif[1].Green; dif[0].Blue |= dif[1].Blue; out->v(x, y) = dif[0] ;}
+          else
+          {
+              int d = dif[0].sum() + dif[1].sum();
+              if (d > Level)
+              {
+                  out->v(x, y) = White;
+                  if ( dif[0].sum() > 0 ) { out->v(x - 1, y) = Black ;  out->v(x + 1, y) = Black; }
+                  if ( dif[1].sum() > 0 ) { out->v(x, y - 1) = Black ;  out->v(x, y + 1) = Black; }
+              }
+              else out->v(x, y) = Black;
+          }
         }
     }
     return out;

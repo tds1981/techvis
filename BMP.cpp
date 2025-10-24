@@ -1,15 +1,15 @@
 #include "BMP.h"
 
-/*BITMAPINFOHEADER Load_Bmp24(string NameFile, IMG* bitAraay,  bool printParametrs)
+BITMAPINFOHEADER1 Load_Bmp24(string NameFile, vector<char> &buf,  bool printParametrs)
 {
-    BITMAPFILEHEADER bfh;
-    BITMAPINFOHEADER bih;
+    BITMAPFILEHEADER1 bfh;
+    BITMAPINFOHEADER1 bih;
     memset(&bih, 0, sizeof(bih));
  
     ifstream f;
     f.open(NameFile, ios::binary);
-    if (!f.is_open()) { printf("ERROR: File not open \n"); return bih; }
-   // else printf("Open File: %s \n", NameFile.c_str());
+    if (!f.is_open()) { printf("ERROR: File %s not open \n", NameFile.c_str()); return bih; }
+    else printf("Open File: %s \n", NameFile.c_str());
 
     f.read(reinterpret_cast<char*> (&bfh), sizeof(bfh));
     
@@ -38,14 +38,13 @@
     }
 
    // vector<char>* buf = reinterpret_cast<vector<char>*>(bitAraay);
-    vector<char> buf;
     buf.resize(bfh.bfSize - bfh.bfOffBits); //Width * Height
     f.read(buf.data(), buf.size());
     f.close();
     
-    //if (printParametrs) printf("bitAraay.size(): pixel: %d, byte: %d \n", bitAraay.size(), buf.size());*/
+    if (printParametrs) printf("byte: %d \n", buf.size());
 
-/*
+
     unsigned int lenStr = bih.biWidth * (bih.biBitCount / 8);
     if (lenStr % 4)
     {
@@ -56,31 +55,17 @@
             iter = buf.erase(iter, iter + nulByte);
             if (iter < buf.end() - 1) iter += lenStr;
         }
-    }*/
+    }
  
-
-   // IMG *bitAraay = new IMG();
-   // bitAraay->width = bih.biWidth;
-   // bitAraay->height = bih.biHeight;
-   // bitAraay->resize(bitAraay->width * bitAraay->height);
-
-   // auto b = buf.end();
-   // for(auto it = bitAraay->begin(); it < bitAraay->end(); it++)
-   // {
-      //  it->Blue = *(--b);
-      //  it->Green = *(--b);
-      //  it->Red = *(--b);
-   //     it->A = 0xff; 
-   // }
     //memcpy(bitAraay->data(), buf.data(), buf.size());
-  //  return bih; 
-//}
+    return bih; 
+}
 
 
 void Save_Bmp24b(string NameFile, char* buf, unsigned int  Width, unsigned int  Height) // c - 24-битный цвет, 
 {
-    BITMAPFILEHEADER bfh;
-    BITMAPINFOHEADER bih;
+    BITMAPFILEHEADER1 bfh;
+    BITMAPINFOHEADER1 bih;
     //unsigned int  Width = bitAraay->width;
     //unsigned int  Height = bitAraay->height;
 
@@ -103,7 +88,6 @@ void Save_Bmp24b(string NameFile, char* buf, unsigned int  Width, unsigned int  
     bfh.bfSize = bfh.bfOffBits + Height * (lstr + nulByte);
     bih.biSizeImage = Height * (lstr + nulByte);
 
-    printf("Save file: %s \n", NameFile.c_str());
    // printf("lstr %d, nulByte %d \n", lstr, nulByte);
 
     ofstream out;
@@ -113,15 +97,47 @@ void Save_Bmp24b(string NameFile, char* buf, unsigned int  Width, unsigned int  
 
     char *nulstr = new char[nulByte]; memset(nulstr, 0, sizeof(nulstr));
    // const char *buf = reinterpret_cast<char*>(bitAraay->data());
-    for (unsigned int y = Height; y > 0; y--)
+    for (unsigned int y = 0; y < Height; y++)
     {
         //out.write(&buf->data()[i * lstr], lstr);
-        for (unsigned int x = 0; x < Width; x++) out.write(&buf[x*4 + Width*y*4], 3);
+        for (unsigned int x = 0; x < Width; x++) out.write(buf + (x + Width*y)*4, 3);
         if (nulByte) out.write(nulstr, nulByte);
     }
-
     out.close();
+    printf("Save file: %s \n", NameFile.c_str());
+    //delete[] nulstr;
 }
+
+void PaintInConsol(char* buf, unsigned int  Width, unsigned int  Height, unsigned int sizePix)
+{
+    Sleep(1000);             // Задержка 100 мс, без этого, иногда, перерисовка окна затирает рисунок
+
+    HWND hwnd = GetConsoleWindow(); // Находим дескриптор (handle) консольного окна
+
+    RECT cons_rc;
+    GetClientRect(hwnd, &cons_rc);
+
+    HDC hdc = GetDC(hwnd);  // Находим контекст устройства DC - device context
+
+    for (int y = 0; y < Height; y++)
+    {
+        for (int x = 0; x < Width; x++)
+        {
+           // ColorPix24 P = bitArray24->Array.at(x + (bih.biHeight - 1 - y) * bih.biWidth);
+            int i = sizePix*(x + y * Width);
+            COLORREF color;
+            if(sizePix == 4) color = RGB(buf[i], buf[i+1], buf[i+2]);
+            if(sizePix == 1) color = RGB(buf[i], buf[i], buf[i]);
+            HPEN hPen = CreatePen(PS_SOLID, 1, color);  // Создаем перо
+            SelectObject(hdc, hPen);
+            SetPixel(hdc, x + cons_rc.right / 2, y, color);
+            DeleteObject(hPen);
+        }
+    }
+    ReleaseDC(hwnd, hdc);                           // Освобождаем ресурсы
+
+} 
+
 /*
 void Monochrom(IMG *InImg, IMG *OutImg, int Level)
 {

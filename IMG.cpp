@@ -1,8 +1,5 @@
 #include "IMG.h"
 
-inline void IMG::Set(unsigned int x, unsigned int y, TColorPix value) {  at(x + y * width) = value; }
-
-inline TColorPix IMG::Pix(unsigned int x, unsigned int y)  { return at(x + y * width);}
 
 TColorPix IMG::PixLim(unsigned int x, unsigned int y)
 {
@@ -10,14 +7,7 @@ TColorPix IMG::PixLim(unsigned int x, unsigned int y)
     unsigned int y_l = y;
     if(x_l >= width)  x_l = width-1;
     if(y_l >= height) y_l = height-1;
-    return at(x_l + y_l * width);
-}
-
-void IMG::ReSize(unsigned int Sx, unsigned int Sy, int mset)
-{
-	width = Sx; height = Sy;
-	resize(Sx * Sy);
-	memset(data(), mset, size());
+    return v(x_l, y_l);
 }
 
 shared_ptr<IMG> IMG::GetSubImg(Area c)  
@@ -28,7 +18,7 @@ shared_ptr<IMG> IMG::GetSubImg(Area c)
 
 	for (uint32_t y = c.y1; y < c.y2; y++)
 		for (uint32_t x = c.x1; x < c.x2; x++)
-			buf->Set(x - c.x1, y - c.y1, Pix(x, y));
+			buf->v(x - c.x1, y - c.y1) = v(x, y);
 	
 	return buf;
 }
@@ -46,7 +36,7 @@ TPoint IMG::GetPointKontur(TPoint oldP, Area c)
 
 void IMG::PutMask(TColorPix M)
 {
-    for(auto it = begin(); it < end(); it++)
+    for(auto it = array.begin(); it < array.end(); it++)
     {
         it->Red &= M.Red; it->Green &= M.Green;  it->Blue &= M.Blue;   it->A &= M.A;
     }
@@ -54,7 +44,7 @@ void IMG::PutMask(TColorPix M)
 
 void IMG::Monochrom(TColorPix Level)
 {  
-   for (auto it = begin(); it < end(); it++)
+   for (auto it = array.begin(); it < array.end(); it++)
        if (it->Blue + it->Green + it->Red + it->A > Level.Blue + Level.Green + Level.Red + Level.A) { *it = {0xff, 0xff, 0xff, 0xff};}
        else { *it = {0, 0, 0, 0};}
 }
@@ -62,15 +52,16 @@ void IMG::Monochrom(TColorPix Level)
 shared_ptr<IMG> IMG::GetCopy()
 {
     shared_ptr<IMG> buf = make_shared<IMG>(width, height);
-    memcpy(buf->data(), data(), sizeof(TColorPix)*buf->size());
+    std::copy(array.begin(), array.end(), buf->array.begin());
+    //memcpy(buf->data(), data(), sizeof(TColorPix)*buf->size());
     return buf;
 }
 
 double IMG::Brightness(int correction)
 {
   double bright = 0;
-  for (auto it = begin(); it < end(); it++)  { bright +=  ((double)it->Red*0.299 + (double)it->Green*0.587 + (double)it->Blue*0.114)/ (double)width*(double)height;  } 
-  int bright_int = round(bright); 
+  for (auto it = array.begin(); it < array.end(); it++)  { bright +=  ((double)it->Red*0.299 + (double)it->Green*0.587 + (double)it->Blue*0.114)/ (double)width*(double)height;  } 
+  int bright_int = (int)round(bright); 
      
   double k = 1.0 + correction/100; 
   unsigned char d_mean[256]; 
@@ -82,7 +73,7 @@ double IMG::Brightness(int correction)
     else if (t >= 255) d_mean[i] = 255;
     else d_mean[i] = (unsigned char) t;
   }   
-   for (auto it = begin(); it < end(); it++) {*it = {d_mean[it->Blue], d_mean[it->Green], d_mean[it->Red], 0xff}; } 
+   for (auto it = array.begin(); it < array.end(); it++) {*it = {d_mean[it->Blue], d_mean[it->Green], d_mean[it->Red], 0xff}; } 
    return  bright;
 }
 
@@ -90,10 +81,10 @@ double IMG::BrightnessArea(TArea A)
 {
   double bright = 0;
   double S = (A.x2 - A.x1)*(A.y2 - A.y1);  
-  for (int y = A.y1; y <= A.y2; y++)
-     for (int x = A.x1; x <= A.x2; x++)
+  for (unsigned int y = A.y1; y <= A.y2; y++)
+     for (unsigned int x = A.x1; x <= A.x2; x++)
      {
-        bright +=  (double)Pix(x, y).Red*0.299 + (double)Pix(x, y).Green*0.587 + (double)Pix(x, y).Blue*0.114;
+        bright +=  (double)v(x, y).Red*0.299 + (double)v(x, y).Green*0.587 + (double)v(x, y).Blue*0.114;
      } 
   bright /= S;
   return bright; 
@@ -101,7 +92,7 @@ double IMG::BrightnessArea(TArea A)
 
 void IMG::Contrast(TColorPix Level, int correction)
 {
-     for (auto it = begin(); it < end(); it++)
+     for (auto it = array.begin(); it < array.end(); it++)
      {   
        int b; int g; int r; 
 
@@ -111,6 +102,49 @@ void IMG::Contrast(TColorPix Level, int correction)
        it->IntsToColor(b, g, r); 
      }
 }
+void IMG::Line(TPoint P1, TPoint P2, TColorPix Color)
+{
+    double x = (double)P1.x;
+    double y = (double)P1.y;
+    double dx = (double)P2.x - (double)P1.x;
+    double dy = (double)P2.y - (double)P1.y;
+    double CountT = round(sqrt(pow(dx, 2) + pow(dy, 2))); //ceil 
+    for (double t = 0; t < CountT; t++)
+    {
+       // double x = ((CountT - t) * P1.x + t * P2.x) / CountT;
+        //double y = ((CountT - t) * P1.y + t * P2.y) / CountT;
+        x += dx / CountT;
+        y += dy / CountT;
+        v((unsigned int)round(x), (unsigned int)round(y)) = Color;
+    }
+}
 
+void IMG::Line1(TPoint P1, TPoint P2, TColorPix Color)
+{
+    int D;  int d;
+    int A;  int b;
+    int dx = (int)P2.x - (int)P1.x;
+    int dy = (int)P2.y - (int)P1.y;
+    
+    if (abs(dx) >= abs(dy)) 
+         { D = dx;  d = dy;  A = (int)P1.x;  b = (int)P1.y; }
+    else { D = dy;  d = dx;  A = (int)P1.y;  b = (int)P1.x; }
 
+    double error = 0;
+    double k = (abs((double)d) + 1) / (abs((double)D) + 1);
+
+   // printf("-- ( %d,  %d) -------- > ( %d,  %d) --- k = %f d=%d  D = %d  d = %d \n", P1.x, P1.y, P2.x, P2.y, k, d, D, d);
+    v(P1.x, P1.y) = Color;
+    for (int t = 0; t < abs(D); t++)
+    {
+        if (d != 0)
+        {
+            A += Sing(D);
+            error += k;
+            if (error >= 1) { error--;  b += Sing(d); } //if (d >= 0) b++; else b--;
+        }
+        else A += Sing(D);
+        if (abs(dx) >= abs(dy)) v((unsigned int)A, (unsigned int)b) = Color; else v((unsigned int)b, (unsigned int)A) = Color;
+    }
+}
 
